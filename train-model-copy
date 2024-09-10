@@ -1,0 +1,649 @@
+import cv2
+import os
+from PIL import Image
+from cv2 import resize
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, models
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import OneHotEncoder
+image_directory = 'dataset/'
+Mild_heart_images = os.listdir(image_directory + 'Mild/')
+Moderate_heart_images = os.listdir(image_directory + 'Moderate/')
+No_heart_images = os.listdir(image_directory + 'No/')
+Proliferate_heart_images = os.listdir(image_directory + 'Proliferate/')
+Severe_heart_images = os.listdir(image_directory + 'Severe/')
+dataset = []
+label = []
+INPUT_SIZE = 244
+for i , image_name in enumerate(No_heart_images):
+    if(image_name.split('.')[1] == 'png'):
+        image = cv2.imread(image_directory + 'No/'+ image_name)
+        image = Image.fromarray(image, 'RGB')
+        image = image.resize((INPUT_SIZE, INPUT_SIZE))
+        dataset.append(np.array(image))
+        label.append(0)
+for i , image_name in enumerate(Mild_heart_images):
+    if(image_name.split('.')[1] == 'png'):
+        image = cv2.imread(image_directory + 'Mild/'+ image_name)
+        image = Image.fromarray(image, 'RGB')
+        image = image.resize((INPUT_SIZE, INPUT_SIZE))
+        dataset.append(np.array(image))
+        label.append(1)
+for i , image_name in enumerate(Moderate_heart_images):
+    if(image_name.split('.')[1] == 'png'):
+        image = cv2.imread(image_directory + 'Moderate/'+ image_name)
+        image = Image.fromarray(image, 'RGB')
+        image = image.resize((INPUT_SIZE, INPUT_SIZE))
+        dataset.append(np.array(image))
+        label.append(2)
+for i , image_name in enumerate(Severe_heart_images):
+    if(image_name.split('.')[1] == 'png'):
+        image = cv2.imread(image_directory + 'Severe/'+ image_name)
+        image = Image.fromarray(image, 'RGB')
+        image = image.resize((INPUT_SIZE, INPUT_SIZE))
+        dataset.append(np.array(image))
+        label.append(3)
+for i , image_name in enumerate(Proliferate_heart_images):
+    if(image_name.split('.')[1] == 'png'):
+        image = cv2.imread(image_directory + 'Proliferate/'+ image_name)
+        image = Image.fromarray(image, 'RGB')
+        image = image.resize((INPUT_SIZE, INPUT_SIZE))
+        dataset.append(np.array(image))
+        label.append(4)
+print(len(dataset))
+print(len(label))
+dataset=np.array(dataset)
+label=np.array(label)
+train_images, test_images, train_labels, test_labels = train_test_split(dataset, label, test_size=0.2, random_state=42)
+train_images, val_images, train_labels, val_labels = train_test_split(train_images, train_labels, test_size=0.2, random_state=42)
+data_augmentation = tf.keras.Sequential([
+    layers.experimental.preprocessing.RandomRotation(0.1),
+    layers.experimental.preprocessing.RandomZoom(0.1),
+    layers.experimental.preprocessing.RandomTranslation(0.1, 0.1),
+    layers.experimental.preprocessing.RandomFlip(mode="horizontal"),
+])
+model = models.Sequential([
+    layers.Input(shape=(244, 244, 3)),
+    data_augmentation,
+    layers.Conv2D(32, (3, 3), activation='relu'),
+    layers.BatchNormalization(),
+    layers.MaxPooling2D((2, 2)),
+    layers.Conv2D(64, (3, 3), activation='relu'),
+    layers.BatchNormalization(),
+    layers.MaxPooling2D((2, 2)),
+    layers.Conv2D(128, (3, 3), activation='relu'),
+    layers.BatchNormalization(),
+    layers.MaxPooling2D((2, 2)),
+    layers.Conv2D(128, (3, 3), activation='relu'),
+    layers.BatchNormalization(),
+    layers.MaxPooling2D((2, 2)),
+    layers.Flatten(),
+    layers.Dense(512, activation='relu'),
+    layers.Dropout(0.5),
+    layers.Dense(5, activation='softmax')
+])
+optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001)
+model.compile(optimizer=optimizer,
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.2,
+                              patience=3, min_lr=0.00001)
+early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+
+model.fit(data_augmentation(train_images), train_labels,
+                    epochs=20,
+                    validation_data=(data_augmentation(val_images), val_labels),
+                    callbacks=[reduce_lr, early_stop])
+test_loss, test_acc = model.evaluate(data_augmentation(test_images), test_labels)
+print('Test accuracy:', test_acc*100 )
+model.save('heart_attack_prediction_model.h5')
+
+import os
+import cv2
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras import layers, models, optimizers
+from sklearn.model_selection import train_test_split
+
+# Function to load and preprocess images
+def load_and_preprocess_image(image_path, input_size):
+    image = cv2.imread(image_path)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = cv2.resize(image, (input_size, input_size))
+    image = image.astype('float32') / 255.0
+    return image
+
+# Load images and labels
+def load_data(image_dir):
+    dataset = []
+    labels = []
+    label_map = {'No': 0, 'Mild': 1, 'Moderate': 2, 'Severe': 3, 'Proliferate': 4}
+    for label_name in label_map.keys():
+        image_paths = os.listdir(os.path.join(image_dir, label_name))
+        for image_name in image_paths:
+            if image_name.endswith('.png'):
+                image_path = os.path.join(image_dir, label_name, image_name)
+                image = load_and_preprocess_image(image_path, INPUT_SIZE)
+                dataset.append(image)
+                labels.append(label_map[label_name])
+    return np.array(dataset), np.array(labels)
+
+# Load data
+image_directory = 'dataset/'
+INPUT_SIZE = 224
+dataset, labels = load_data(image_directory)
+
+# Split data into train, validation, and test sets
+train_images, test_images, train_labels, test_labels = train_test_split(dataset, labels, test_size=0.2, random_state=42)
+train_images, val_images, train_labels, val_labels = train_test_split(train_images, train_labels, test_size=0.2, random_state=42)
+
+# Define complex model architecture
+inputs = tf.keras.Input(shape=(INPUT_SIZE, INPUT_SIZE, 3))
+
+# Convolutional block 1
+x = layers.Conv2D(64, (3, 3), activation='relu', padding='same')(inputs)
+x = layers.Conv2D(64, (3, 3), activation='relu', padding='same')(x)
+x = layers.MaxPooling2D((2, 2))(x)
+
+# Convolutional block 2
+x = layers.Conv2D(128, (3, 3), activation='relu', padding='same')(x)
+x = layers.Conv2D(128, (3, 3), activation='relu', padding='same')(x)
+x = layers.MaxPooling2D((2, 2))(x)
+
+# Convolutional block 3
+x = layers.Conv2D(256, (3, 3), activation='relu', padding='same')(x)
+x = layers.Conv2D(256, (3, 3), activation='relu', padding='same')(x)
+x = layers.Conv2D(256, (3, 3), activation='relu', padding='same')(x)
+x = layers.MaxPooling2D((2, 2))(x)
+
+# Convolutional block 4
+x = layers.Conv2D(512, (3, 3), activation='relu', padding='same')(x)
+x = layers.Conv2D(512, (3, 3), activation='relu', padding='same')(x)
+x = layers.Conv2D(512, (3, 3), activation='relu', padding='same')(x)
+x = layers.MaxPooling2D((2, 2))(x)
+
+# Convolutional block 5
+x = layers.Conv2D(512, (3, 3), activation='relu', padding='same')(x)
+x = layers.Conv2D(512, (3, 3), activation='relu', padding='same')(x)
+x = layers.Conv2D(512, (3, 3), activation='relu', padding='same')(x)
+x = layers.MaxPooling2D((2, 2))(x)
+
+# Flatten and fully connected layers
+x = layers.Flatten()(x)
+x = layers.Dense(4096, activation='relu')(x)
+x = layers.Dropout(0.5)(x)
+x = layers.Dense(4096, activation='relu')(x)
+x = layers.Dropout(0.5)(x)
+outputs = layers.Dense(5, activation='softmax')(x)
+
+# Create model
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+# Compile the model
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+# Model summary
+model.summary()
+
+# Define callbacks
+reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, min_lr=0.00001)
+early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+
+# Increase data augmentation
+train_datagen = tf.keras.preprocessing.image.ImageDataGenerator(
+    rotation_range=40,
+    width_shift_range=0.2,
+    height_shift_range=0.2,
+    shear_range=0.2,
+    zoom_range=0.2,
+    horizontal_flip=True,
+    preprocessing_function=tf.keras.applications.vgg16.preprocess_input
+)
+
+# Train the model
+history = model.fit(train_datagen.flow(train_images, train_labels, batch_size=32),
+                    steps_per_epoch=len(train_images) / 32,
+                    epochs=10,  # Train for more epochs
+                    validation_data=(val_images, val_labels),
+                    callbacks=[reduce_lr, early_stop])
+
+# Evaluate the model
+test_loss, test_acc = model.evaluate(test_images, test_labels)
+print('Test accuracy:', test_acc)
+
+# Save the model
+model.save('heart_attack_prediction_model_complex.h5')
+
+import os
+import cv2
+import numpy as np
+import tensorflow as tf
+from sklearn.model_selection import train_test_split
+from tensorflow.keras import layers, models, optimizers
+from tensorflow.keras.applications import VGG16
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+
+# Function to load and preprocess images
+def load_and_preprocess_image(image_path, input_size):
+    image = cv2.imread(image_path)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = cv2.resize(image, (input_size, input_size))
+    image = image.astype('float32') / 255.0
+    return image
+
+# Load images and labels
+def load_data(image_dir):
+    dataset = []
+    labels = []
+    label_map = {'No': 0, 'Mild': 1, 'Moderate': 2, 'Severe': 3, 'Proliferate': 4}
+    for label_name in label_map.keys():
+        image_paths = os.listdir(os.path.join(image_dir, label_name))
+        for image_name in image_paths:
+            if image_name.endswith('.png'):
+                image_path = os.path.join(image_dir, label_name, image_name)
+                image = load_and_preprocess_image(image_path, INPUT_SIZE)
+                dataset.append(image)
+                labels.append(label_map[label_name])
+    return np.array(dataset), np.array(labels)
+
+# Load data
+image_directory = 'dataset/'
+INPUT_SIZE = 224
+dataset, labels = load_data(image_directory)
+
+# Split data into train, validation, and test sets
+train_images, test_images, train_labels, test_labels = train_test_split(dataset, labels, test_size=0.2, random_state=42)
+train_images, val_images, train_labels, val_labels = train_test_split(train_images, train_labels, test_size=0.2, random_state=42)
+
+# Load pre-trained VGG16 model
+base_model = VGG16(weights='imagenet', include_top=False, input_shape=(INPUT_SIZE, INPUT_SIZE, 3))
+
+# Freeze convolutional layers
+for layer in base_model.layers:
+    layer.trainable = False
+
+# Add custom classification layers
+x = base_model.output
+x = layers.Flatten()(x)
+x = layers.Dense(512, activation='relu')(x)
+x = layers.Dropout(0.5)(x)
+predictions = layers.Dense(5, activation='softmax')(x)
+
+# Create model
+model = models.Model(inputs=base_model.input, outputs=predictions)
+
+# Compile model
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+# Data augmentation
+train_datagen = ImageDataGenerator(
+    rotation_range=30,
+    width_shift_range=0.2,
+    height_shift_range=0.2,
+    shear_range=0.2,
+    zoom_range=0.2,
+    horizontal_flip=True,
+    preprocessing_function=tf.keras.applications.vgg16.preprocess_input
+)
+
+# Define callbacks
+reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, min_lr=0.00001)
+early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+
+# Train the model
+history = model.fit(train_datagen.flow(train_images, train_labels, batch_size=32),
+                    steps_per_epoch=len(train_images) / 32,
+                    epochs=10,
+                    validation_data=(val_images, val_labels),
+                    callbacks=[reduce_lr, early_stop])
+
+# Evaluate the model
+test_loss, test_acc = model.evaluate(test_images, test_labels)
+print('Test accuracy:', test_acc)
+
+# Save the model
+#model.save('heart_attack_prediction_model_transfer_learning.h5')
+
+import os
+import cv2
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras import layers, models, optimizers
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.applications import VGG16
+from tensorflow.keras.applications.vgg16 import preprocess_input
+
+# Function to load and preprocess images
+def load_and_preprocess_image(image_path, input_size):
+    image = cv2.imread(image_path)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = cv2.resize(image, (input_size, input_size))
+    image = preprocess_input(image)
+    return image
+
+# Load images and labels
+def load_data(image_dir):
+    dataset = []
+    labels = []
+    label_map = {'No': 0, 'Mild': 1, 'Moderate': 2, 'Severe': 3, 'Proliferate': 4}
+    for label_name in label_map.keys():
+        image_paths = os.listdir(os.path.join(image_dir, label_name))
+        for image_name in image_paths:
+            if image_name.endswith('.png'):
+                image_path = os.path.join(image_dir, label_name, image_name)
+                image = load_and_preprocess_image(image_path, INPUT_SIZE)
+                dataset.append(image)
+                labels.append(label_map[label_name])
+    return np.array(dataset), np.array(labels)
+
+# Load data
+image_directory = 'dataset/'
+INPUT_SIZE = 224
+dataset, labels = load_data(image_directory)
+
+# Split data into train, validation, and test sets
+train_images, test_images, train_labels, test_labels = train_test_split(dataset, labels, test_size=0.2, random_state=42)
+train_images, val_images, train_labels, val_labels = train_test_split(train_images, train_labels, test_size=0.2, random_state=42)
+
+# Load pre-trained VGG16 model
+base_model = VGG16(input_shape=(INPUT_SIZE, INPUT_SIZE, 3), include_top=False, weights='imagenet')
+base_model.trainable = True
+
+# Add custom classification head
+global_average_layer = layers.GlobalAveragePooling2D()
+output_layer = layers.Dense(5, activation='softmax')
+
+# Create the model
+model = models.Sequential([
+    base_model,
+    global_average_layer,
+    output_layer
+])
+
+# Compile the model
+model.compile(optimizer=optimizers.Adam(lr=1e-5),
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+# Train the model
+history = model.fit(train_images, train_labels,
+                    epochs=10,
+                    batch_size=32,
+                    validation_data=(val_images, val_labels),
+                    callbacks=[tf.keras.callbacks.EarlyStopping(patience=5, restore_best_weights=True)])
+
+# Evaluate the model
+test_loss, test_acc = model.evaluate(test_images, test_labels)
+print('Test accuracy:', test_acc)
+
+# Save the model
+#model.save('heart_attack_prediction_model.h5')
+
+import os
+import cv2
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras import layers, models, optimizers
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.applications import VGG16
+from tensorflow.keras.applications.vgg16 import preprocess_input
+
+# Function to load and preprocess images
+def load_and_preprocess_image(image_path, input_size):
+    image = cv2.imread(image_path)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = cv2.resize(image, (input_size, input_size))
+    image = preprocess_input(image)
+    return image
+
+# Load images and labels
+def load_data(image_dir):
+    dataset = []
+    labels = []
+    label_map = {'No': 0, 'Mild': 1, 'Moderate': 2, 'Severe': 3, 'Proliferate': 4}
+    for label_name in label_map.keys():
+        image_paths = os.listdir(os.path.join(image_dir, label_name))
+        for image_name in image_paths:
+            if image_name.endswith('.png'):
+                image_path = os.path.join(image_dir, label_name, image_name)
+                image = load_and_preprocess_image(image_path, INPUT_SIZE)
+                dataset.append(image)
+                labels.append(label_map[label_name])
+    return np.array(dataset), np.array(labels)
+
+# Load data
+image_directory = 'dataset/'
+INPUT_SIZE = 224
+dataset, labels = load_data(image_directory)
+
+# Split data into train, validation, and test sets
+train_images, test_images, train_labels, test_labels = train_test_split(dataset, labels, test_size=0.2, random_state=42)
+train_images, val_images, train_labels, val_labels = train_test_split(train_images, train_labels, test_size=0.2, random_state=42)
+
+# Data augmentation
+train_datagen = tf.keras.preprocessing.image.ImageDataGenerator(
+    rotation_range=30,
+    width_shift_range=0.2,
+    height_shift_range=0.2,
+    shear_range=0.2,
+    zoom_range=0.2,
+    horizontal_flip=True,
+    preprocessing_function=preprocess_input
+)
+
+# Load pre-trained VGG16 model
+base_model = VGG16(input_shape=(INPUT_SIZE, INPUT_SIZE, 3), include_top=False, weights='imagenet')
+base_model.trainable = True
+
+# Add custom classification head
+global_average_layer = layers.GlobalAveragePooling2D()
+output_layer = layers.Dense(5, activation='softmax')
+
+# Create the model
+model = models.Sequential([
+    base_model,
+    global_average_layer,
+    output_layer
+])
+
+# Compile the model
+model.compile(optimizer=optimizers.Adam(lr=1e-5),
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+# Model summary
+model.summary()
+
+# Define callbacks
+reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, min_lr=0.00001)
+early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+
+# Train the model
+history = model.fit(train_datagen.flow(train_images, train_labels, batch_size=32),
+                    steps_per_epoch=len(train_images) / 32,
+                    epochs=50,
+                    validation_data=(val_images, val_labels),
+                    callbacks=[reduce_lr, early_stop])
+
+# Evaluate the model
+test_loss, test_acc = model.evaluate(test_images, test_labels)
+print('Test accuracy:', test_acc)
+
+# Save the model
+model.save('heart_attack_prediction_model.h5')
+
+import os
+import cv2
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras import layers, models, optimizers
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.applications import DenseNet121
+from tensorflow.keras.applications.densenet import preprocess_input
+# Function to load and preprocess images
+def load_and_preprocess_image(image_path, input_size):
+    image = cv2.imread(image_path)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = cv2.resize(image, (input_size, input_size))
+    image = preprocess_input(image)
+    return image
+# Load images and labels
+def load_data(image_dir):
+    dataset = []
+    labels = []
+    label_map = {'No': 0, 'Mild': 1, 'Moderate': 2, 'Severe': 3, 'Proliferate': 4}
+    for label_name in label_map.keys():
+        image_paths = os.listdir(os.path.join(image_dir, label_name))
+        for image_name in image_paths:
+            if image_name.endswith('.png'):
+                image_path = os.path.join(image_dir, label_name, image_name)
+                image = load_and_preprocess_image(image_path, INPUT_SIZE)
+                dataset.append(image)
+                labels.append(label_map[label_name])
+    return np.array(dataset), np.array(labels)
+# Load data
+image_directory = 'dataset/'
+INPUT_SIZE = 224
+dataset, labels = load_data(image_directory)
+# Split data into train, validation, and test sets
+train_images, test_images, train_labels, test_labels = train_test_split(dataset, labels, test_size=0.2, random_state=42)
+train_images, val_images, train_labels, val_labels = train_test_split(train_images, train_labels, test_size=0.2, random_state=42)
+# Load pre-trained DenseNet121 model (experiment with different architectures)
+base_model = DenseNet121(input_shape=(INPUT_SIZE, INPUT_SIZE, 3), include_top=False, weights='imagenet')
+# Freeze some base model layers (adjust number of layers to unfreeze for fine-tuning)
+base_model.trainable = False  # Freeze all layers by default
+# Optionally, select layers to unfreeze for fine-tuning (e.g., base_model.layers[-10:] are the last 10 layers)
+for layer in base_model.layers[-10:]:
+    layer.trainable = True
+# Add custom classification head
+global_average_layer = layers.GlobalAveragePooling2D()
+dropout = layers.Dropout(0.5)  # Add dropout for regularization
+output_layer = layers.Dense(5, activation='softmax')
+# Create the model
+model = models.Sequential([
+  base_model,
+  global_average_layer,
+  dropout,
+  output_layer
+])
+# Compile the model
+model.compile(optimizer=optimizers.Adam(lr=1e-5),
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+# Train the model
+history = model.fit(train_images, train_labels,
+                    epochs=15,  # Adjust epochs as needed
+                    batch_size=32,
+                    validation_data=(val_images, val_labels),
+                    callbacks=[tf.keras.callbacks.EarlyStopping(patience=5, restore_best_weights=True)])
+
+# Evaluate the model
+test_loss, test_acc = model.evaluate(test_images, test_labels)
+print('Test accuracy:', test_acc)
+
+
+# Save the model
+model.save('heart_attack_prediction_model.h5')
+
+
+import os
+import cv2
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras import layers, models, optimizers
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.applications import DenseNet121
+from tensorflow.keras.applications.densenet import preprocess_input
+
+# Function to load and preprocess images
+def load_and_preprocess_image(image_path, input_size):
+    image = cv2.imread(image_path)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = cv2.resize(image, (input_size, input_size))
+    image = preprocess_input(image)
+    return image
+
+# Load images and labels
+def load_data(image_dir):
+    dataset = []
+    labels = []
+    label_map = {'No': 0, 'Mild': 1, 'Moderate': 2, 'Severe': 3, 'Proliferate': 4}
+    for label_name in label_map.keys():
+        image_paths = os.listdir(os.path.join(image_dir, label_name))
+        for image_name in image_paths:
+            if image_name.endswith('.png'):
+                image_path = os.path.join(image_dir, label_name, image_name)
+                image = load_and_preprocess_image(image_path, INPUT_SIZE)
+                dataset.append(image)
+                labels.append(label_map[label_name])
+    return np.array(dataset), np.array(labels)
+
+# Load data
+image_directory = 'dataset/'
+INPUT_SIZE = 224
+dataset, labels = load_data(image_directory)
+
+# Split data into train, validation, and test sets
+train_images, test_images, train_labels, test_labels = train_test_split(dataset, labels, test_size=0.2, random_state=42)
+train_images, val_images, train_labels, val_labels = train_test_split(train_images, train_labels, test_size=0.2, random_state=42)
+
+# Data augmentation
+train_datagen = tf.keras.preprocessing.image.ImageDataGenerator(
+    rotation_range=30,
+    width_shift_range=0.1,
+    height_shift_range=0.1,
+    shear_range=0.1,
+    zoom_range=0.1,
+    horizontal_flip=True,
+    preprocessing_function=preprocess_input
+)
+
+# Load pre-trained DenseNet121 model
+base_model = DenseNet121(input_shape=(INPUT_SIZE, INPUT_SIZE, 3), include_top=False, weights='imagenet')
+
+# Freeze base model layers
+base_model.trainable = False
+
+# Add custom classification head
+global_average_layer = layers.GlobalAveragePooling2D()
+dropout = layers.Dropout(0.5)  # Add dropout for regularization
+output_layer = layers.Dense(5, activation='softmax')
+
+# Create the model
+model = models.Sequential([
+  base_model,
+  global_average_layer,
+  dropout,
+  output_layer
+])
+
+# Compile the model with a lower learning rate
+model.compile(optimizer=optimizers.Adam(lr=1e-5),  # Decreased learning rate
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+# Define a new early stopping callback with increased patience
+early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+
+# Train the model
+history = model.fit(train_datagen.flow(train_images, train_labels, batch_size=32),
+                    steps_per_epoch=len(train_images) / 32,
+                    epochs=30,
+                    validation_data=(val_images, val_labels),
+                    callbacks=[early_stop])
+
+# Evaluate the model
+test_loss, test_acc = model.evaluate(test_images, test_labels)
+print('Test accuracy:', test_acc)
+# Save the model
+#model.save('heart_attack_prediction_model.h5')
+
+model.save('heart_attack_prediction_model.h5')
